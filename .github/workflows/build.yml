@@ -10,11 +10,11 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -26,6 +26,7 @@ jobs:
 
       - name: Generate Android project around my files
         run: |
+          exec > >(tee -a /tmp/dav_all.log) 2>&1
           mkdir -p /tmp/dav_src
           cp pubspec.yaml /tmp/dav_src/pubspec.yaml
           cp main.dart /tmp/dav_src/main.dart
@@ -36,11 +37,13 @@ jobs:
 
       - name: Point the updater at this repository
         run: |
+          exec > >(tee -a /tmp/dav_all.log) 2>&1
           sed -i "s#OWNER/REPO#${{ github.repository }}#" lib/main.dart
           grep -n "kUpdateRepo =" lib/main.dart
 
       - name: Patch Android settings
         run: |
+          exec > >(tee -a /tmp/dav_all.log) 2>&1
           sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>\n    <application#' android/app/src/main/AndroidManifest.xml
           sed -i 's/android:label="dav_browser"/android:label="Dav Browser"/' android/app/src/main/AndroidManifest.xml
           sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 24/' android/app/build.gradle.kts || true
@@ -48,6 +51,7 @@ jobs:
 
       - name: Add updater, icon and dependencies
         run: |
+          exec > >(tee -a /tmp/dav_all.log) 2>&1
           flutter pub add ota_update package_info_plus
           flutter pub add --dev flutter_launcher_icons
           cat > flutter_launcher_icons.yaml <<'EOF'
@@ -65,6 +69,7 @@ jobs:
           KS_B64: ${{ secrets.DAV_KEYSTORE_BASE64 }}
           KS_PASS: ${{ secrets.DAV_KEYSTORE_PASSWORD }}
         run: |
+          exec > >(tee -a /tmp/dav_all.log) 2>&1
           if [ -z "$KS_B64" ] || [ -z "$KS_PASS" ]; then
             echo "Missing DAV_KEYSTORE_BASE64 or DAV_KEYSTORE_PASSWORD secret"
             exit 1
@@ -92,9 +97,24 @@ jobs:
           open(p, 'w').write(s)
           PY
 
-      - run: flutter pub get
+      - name: Download packages
+        run: |
+          exec > >(tee -a /tmp/dav_all.log) 2>&1
+          flutter pub get
 
-      - run: flutter build apk --release --build-name=0.1.${{ github.run_number }} --build-number=${{ github.run_number }}
+      - name: Build the APK
+        run: |
+          exec > >(tee -a /tmp/dav_all.log) 2>&1
+          flutter build apk --release --build-name=0.1.${{ github.run_number }} --build-number=${{ github.run_number }}
+
+      - name: Show the real error on the summary page
+        if: failure()
+        run: |
+          sleep 3
+          if [ -f /tmp/dav_all.log ]; then
+            MSG=$(tail -n 30 /tmp/dav_all.log | sed 's/\r//g' | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            echo "::error title=DAV BUILD ERROR::${MSG}"
+          fi
 
       - name: Publish APK as a downloadable release
         uses: softprops/action-gh-release@v2
