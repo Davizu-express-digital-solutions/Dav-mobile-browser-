@@ -1,3 +1,4 @@
+
 name: Build Android APK
 
 on:
@@ -94,6 +95,19 @@ jobs:
               raise SystemExit("Could not patch signing config")
           s = s.replace('    buildTypes {', block + '    buildTypes {', 1)
           s = s.replace('signingConfigs.getByName("debug")', 'signingConfigs.getByName("release")')
+          open(p, 'w').write(s)
+          PY
+
+      - name: Enable Java desugaring for the updater
+        run: |
+          exec > >(tee -a /tmp/dav_all.log) 2>&1
+          python3 - <<'PY'
+          p = 'android/app/build.gradle.kts'
+          s = open(p).read()
+          if 'compileOptions {' not in s:
+              raise SystemExit("Could not find compileOptions to patch")
+          s = s.replace('compileOptions {', 'compileOptions {\n        isCoreLibraryDesugaringEnabled = true', 1)
+          s += '\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")\n}\n'
           open(p, 'w').write(s)
           PY
 
